@@ -151,7 +151,13 @@ void writeNoteMeta(int num, const char* tag, const char* memoName) {
 
 ## 6. `rtc.h` / `rtc.cpp` — timezone from config
 
-The portal-configurable timezone needs a hook in the RTC module.
+The portal-configurable timezone needs a hook in the RTC module. First add
+`TZ_BERLIN` to `config.h` (before the closing `#endif`):
+
+```c
+// config.h
+#define TZ_BERLIN "CET-1CEST,M3.5.0,M10.5.0/3"
+```
 
 ```c
 // rtc.h
@@ -160,6 +166,7 @@ void    rtcApplyTimezone();
 
 ```cpp
 // rtc.cpp — add near the top with the other includes
+#include "../../config.h"
 #include "config_store.h"
 ```
 
@@ -271,7 +278,13 @@ void wifiDisconnect();
 ### 7c. Portal: settings page and optional PIN
 
 Add these handlers to `network.cpp`. They are self-contained and reuse the stock
-`portalCss()` and `htmlEscape()` helpers:
+`portalCss()` and `htmlEscape()` helpers. Add a forward declaration near the top
+of `network.cpp` (after the includes) so the stock portal handlers can call it
+before it is defined:
+
+```cpp
+static bool requirePortalAuth(); // forward declaration
+```
 
 ```cpp
 static String s_portalCookie;
@@ -580,7 +593,7 @@ else if (state == STATE_TASKS) {
       saveTasksToSD();
       showTasksScreen(taskCursor);
     }
-  } else if (isBrowseBack(rec, pwr)) {
+  } else if (pwr == EV_LONG || pwr == EV_DOUBLE || rec == EV_DOUBLE) {
     soundBack();
     state = STATE_MENU;
     showMenu(menuCursor);
@@ -596,6 +609,27 @@ configInit();
 ```
 
 (`configInit()` loads `/notes/config.txt` and applies the configured timezone.)
+
+**Transfer mode** — the stock `startTransferMode()` connects with
+`WiFi.begin(WIFI_SSID, WIFI_PASS)`. Since `secrets.h` is removed, replace that block
+with `wifiConnect`:
+
+```cpp
+void startTransferMode() {
+  state = STATE_TRANSFER;
+  showTransferConnecting();
+
+  if (!wifiConnect(12, false)) {
+    showError("NO WIFI");
+    delay(1600);
+    state = STATE_SETTINGS;
+    showSettings(settingsCursor);
+    return;
+  }
+
+  syncTimeFromNTP(8000);
+  // ... rest of stock startTransferMode unchanged
+```
 
 **Optional: hourly auto-sync** — if your firmware deep-sleep wakeup already
 distinguishes timer wakeups, this block re-syncs without user action while the device
@@ -815,9 +849,10 @@ version:
   `drawMinimalDocIcon`, `drawTinyHint`, `drawStrFit`, `drawStrC`, `drawStrInBox`,
   `drawKicker`, `textW`, `hline`, `fillRoundRect`, `strokeRoundRect`, `clearWhite`,
   `refresh`, `BLACK`, `WHITE`
-- Buttons: `readButtonEvent`, `isBrowseBack`, `BTN_REC`, `BTN_PWR`,
-  `EV_SINGLE` (button engine as in current firmware builds)
-- Time: `syncTimeFromNTP`, `currentUtcIso`, `TZ_BERLIN`, `LOCAL_TIME_OFFSET_MIN`
+- Buttons: `readButtonEvent`, `BTN_REC`, `BTN_PWR`,
+  `EV_SINGLE`, `EV_LONG`, `EV_DOUBLE` (button engine as in current firmware builds)
+- Time: `syncTimeFromNTP`, `currentUtcIso`, `LOCAL_TIME_OFFSET_MIN`
+  (`TZ_BERLIN` is added by this integration, not a stock symbol)
 - Sounds: `soundNext`, `soundSelect`, `soundBack`, `soundSuccess`
 - Globals: `state`, `menuCursor`, `listCursor`, `tagCursor`, `settingsCursor`,
   `activeFilter`, `wakeToMenuRequested`, `transferServer`
