@@ -1,0 +1,12 @@
+# Never commit real credentials
+secrets.h
+
+# OS / editor noise
+.DS_Store
+._*
+
+# Arduino build output
+build/
+*.bin
+*.elf
+*.map
