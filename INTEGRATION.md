@@ -1,17 +1,20 @@
 # Integrating pala-memos into the Pala Note firmware
 
-These are the edits to make in **your own copy** of the Pala Note firmware. This repo
-ships the new files and the change instructions only — it does not include any of the
-base firmware (© Paul Lagier).
+Make these edits in **your own copy** of the Pala Note firmware. This repo ships the
+new files and the change instructions only. It does not include any of the base
+firmware (© Paul Lagier).
 
 Firmware layout assumed: an Arduino sketch `pala_note/` with `pala_note.ino`,
 `config.h`, `types.h`, and modules under `src/app/`. Build with **Arduino ESP32 core
 3.x** (same as the stock firmware).
 
-What you get when done: the stock OpenAI-Whisper transcription is replaced by your
-self-hosted **Memos** server — notes are AI-transcribed via Memos, published as memos
-with their tag, and a two-way task list syncs with checkbox lines inside memos, all
-configurable from the device's web portal (no recompiling, no hardcoded Wi-Fi).
+The stock firmware transcribes with the OpenAI Whisper API. This integration replaces
+that path with your own **Memos** server. After the change:
+
+- Memos transcribes your voice notes with AI.
+- The device publishes each note as a memo with the note tag.
+- A task list syncs in both directions with the checkbox lines in your memos.
+- The device web portal holds all settings. No recompile. No hardcoded Wi-Fi.
 
 ---
 
@@ -38,9 +41,9 @@ ble_service/ble_service.h    ->  src/app/ble_service.h
 ble_service/ble_service.cpp  ->  src/app/ble_service.cpp
 ```
 
-`memos.cpp` expects to sit in `src/app/memos/` — its includes are relative to that
-location (`../../../config.h`, `../notes.h`, `../config_store.h`, etc.).
-`config_store`, `ble_service` and `shtc3` expect `src/app/` directly.
+`memos.cpp` expects to sit in `src/app/memos/`. Its includes are relative to that
+location (`../../../config.h`, `../notes.h`, `../config_store.h`, and so on).
+`config_store`, `ble_service`, and `shtc3` expect `src/app/` directly.
 
 ---
 
@@ -61,23 +64,23 @@ Make your own `secrets.h` at the sketch root (git-ignored) from `secrets.example
 #endif
 ```
 
-Everything in `secrets.h` is only a **first-boot default** — after the first flash
-you change Wi-Fi, Memos URL, token, visibility, timezone and portal PIN from the
-device's web portal (`/setup`), stored on the SD card at `/notes/config.txt`.
-Keep the stock `OPENAI_KEY` line out — it is no longer used.
+Everything in `secrets.h` is only a **first-boot default**. After the first flash,
+change the Wi-Fi, Memos URL, token, visibility, timezone, and portal PIN from the
+device web portal (`/setup`). The device stores them on the SD card at
+`/notes/config.txt`. Keep the stock `OPENAI_KEY` line out. It is no longer used.
 
 > The stock firmware also has a `secrets.h` with `WIFI_SSID/WIFI_PASS`. The modules
-> below read through `secrets_inc.h`, which prefers your real `secrets.h` and falls
-> back to the example so a clean checkout still compiles.
+> below read through `secrets_inc.h`. This file prefers your real `secrets.h` and
+> falls back to the example so a clean checkout still compiles.
 
-Add `secrets.h` to the sketch's `.gitignore` if it isn't already.
+Add `secrets.h` to the sketch `.gitignore` if it is not already there.
 
 ---
 
 ## 3. `types.h` — task struct + state
 
-Add the `MemosTask` struct, and add `STATE_TASKS` to the `AppState` enum (e.g. before
-`STATE_ERROR`):
+Add the `MemosTask` struct. Add `STATE_TASKS` to the `AppState` enum (for example,
+before `STATE_ERROR`):
 
 ```c
 // in enum AppState { ... , STATE_TRANSFER,
@@ -111,8 +114,8 @@ extern std::vector<MemosTask> taskList;
 
 ## 5. `notes.h` / `notes.cpp` — memo name in note meta
 
-The module stores the id of the memo each note was published into. Widen
-`writeNoteMeta` to take it (default keeps all existing calls compiling):
+The module stores the memo ID for each published note. Widen `writeNoteMeta` to take
+it. The default argument keeps all existing calls compiling:
 
 ```c
 // notes.h
@@ -179,7 +182,7 @@ void rtcApplyTimezone() {
 ```
 
 Then call it at the end of the stock `utcTmToEpoch()` (after its `mktime`, before
-`return epoch;`), so conversions back out of UTC use the configured zone.
+`return epoch;`). This makes conversions back out of UTC use the configured zone.
 
 ---
 
@@ -187,19 +190,20 @@ Then call it at the end of the stock `utcTmToEpoch()` (after its `mktime`, befor
 
 ### 7a. Remove the stock OpenAI transcription
 
-The module provides `transcribe()` / `transcribeAll()` now, so delete the stock
+The module provides `transcribe()` and `transcribeAll()` now. Delete the stock
 (OpenAI) ones to avoid duplicate symbols:
 
 - In `network.h`: remove the declarations
-  `bool transcribe(const String& wavPath, int noteNum);` and `void transcribeAll();`
+  `bool transcribe(const String& wavPath, int noteNum);` and `void transcribeAll();`.
 - In `network.cpp`: remove the matching functions and any static helper used only by
-  them (the whisper response parser). Search for `api.openai.com` / `OPENAI_KEY` —
-  that whole transcription block goes away. Keep everything portal/transfer related.
+  them (the whisper response parser). Search for `api.openai.com` or `OPENAI_KEY`.
+  That whole transcription block goes away. Keep everything portal and transfer
+  related.
 
-### 7b. Robust Wi-Fi helpers (config-driven instead of hardcoded)
+### 7b. Wi-Fi helpers (config-driven, not hardcoded)
 
-Append to `network.cpp` (these read Wi-Fi credentials from `config_store` instead of
-hardcoded `secrets.h`):
+Append to `network.cpp`. These read Wi-Fi credentials from `config_store` instead of
+hardcoded `secrets.h`:
 
 ```cpp
 static void wifiEventCallback(WiFiEvent_t event, WiFiEventInfo_t info) {
@@ -264,10 +268,10 @@ void wifiDisconnect();
 (`network.cpp` needs `#include "esp_wifi.h"` for the two `esp_wifi_*` calls, and
 `#include "config_store.h"`.)
 
-### 7c. Portal: settings page + optional PIN
+### 7c. Portal: settings page and optional PIN
 
-Add these handlers to `network.cpp` (self-contained — they reuse the stock
-`portalCss()` / `htmlEscape()` helpers):
+Add these handlers to `network.cpp`. They are self-contained and reuse the stock
+`portalCss()` and `htmlEscape()` helpers:
 
 ```cpp
 static String s_portalCookie;
@@ -415,7 +419,7 @@ Register the routes at the end of the stock `setupTransferServer()`:
 Recommended (PIN protection): add `if (!requirePortalAuth()) return;` as the first
 line of the stock portal handlers (`handlePortalRoot`, `handleExportTxt`,
 `sendFileByNum`, `handleTagsPage`, `handleTagAdd`, `handleTagDelete`,
-`handleNoteDelete`, `handlePortalJson`). With no PIN set this is a no-op.
+`handleNoteDelete`, `handlePortalJson`). With no PIN set, this is a no-op.
 
 Clear the session cookie in `stopTransferMode()`:
 
@@ -426,7 +430,7 @@ void stopTransferMode() {
 }
 ```
 
-And declare in `network.h`:
+And declare these in `network.h`:
 
 ```c
 void handlePortalUnlock();
@@ -445,7 +449,7 @@ void handleSetupSave();
 #include "src/app/memos/memos.h"
 ```
 
-Remove `#include "secrets.h"` (credentials now flow through `config_store`).
+Remove `#include "secrets.h"`. Credentials now flow through `config_store`.
 
 **Globals** — with the other definitions:
 
@@ -459,8 +463,8 @@ std::vector<MemosTask> taskList;
 const char* MENU_ITEMS[] = { "Notes", "Tasks", "Tags", "Sync", "Settings" };
 ```
 
-**Menu select handler** — insert the Tasks branch and shift the remaining indices
-(stock indices were Notes=0, Tags=1, Sync=2, Settings=3):
+**Menu select handler** — insert the Tasks branch and shift the remaining indices.
+The stock indices were Notes=0, Tags=1, Sync=2, Settings=3:
 
 ```c
 } else if (menuCursor == 0) {
@@ -484,7 +488,7 @@ const char* MENU_ITEMS[] = { "Notes", "Tasks", "Tags", "Sync", "Settings" };
 }
 ```
 
-(declares `int taskCursor = 0;` alongside `menuCursor` etc.)
+(declares `int taskCursor = 0;` alongside `menuCursor` and the other cursors.)
 
 **Sync flow** — replace the whole stock `startSyncFlow()` with:
 
@@ -557,7 +561,7 @@ void startSyncFlow() {
 }
 ```
 
-**Tasks screen handler** — add a branch in the main loop's state `if/else` chain:
+**Tasks screen handler** — add a branch in the main loop state `if/else` chain:
 
 ```cpp
 else if (state == STATE_TASKS) {
@@ -584,7 +588,7 @@ else if (state == STATE_TASKS) {
 }
 ```
 
-**Setup** — after the SD/index loading, add:
+**Setup** — after the SD and index loading, add:
 
 ```c
 loadTasksFromSD();
@@ -593,10 +597,10 @@ configInit();
 
 (`configInit()` loads `/notes/config.txt` and applies the configured timezone.)
 
-**Optional: hourly auto-sync** — if your firmware's deep-sleep wakeup already
-distinguishes timer wakeups, this block re-syncs unattended while sleeping. Put it
-in `setup()` after `configInit()`, before the normal wake handling. It re-enters
-deep sleep for another hour either way:
+**Optional: hourly auto-sync** — if your firmware deep-sleep wakeup already
+distinguishes timer wakeups, this block re-syncs without user action while the device
+sleeps. Put it in `setup()` after `configInit()` and before the normal wake handling.
+It re-enters deep sleep for another hour either way:
 
 ```cpp
 if (esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_TIMER) {
@@ -613,8 +617,9 @@ if (esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_TIMER) {
 ```
 
 (This expects your `enterUltraSleep` to accept an optional seconds argument for a
-timer wakeup — add `uint32_t sleepSeconds` handling there if your copy doesn't
-have it: when > 0, call `esp_sleep_enable_timer_wakeup((uint64_t)sleepSeconds * 1000000ULL)` before sleeping.)
+timer wakeup. Add `uint32_t sleepSeconds` handling there if your copy does not have
+it: when the value is greater than 0, call
+`esp_sleep_enable_timer_wakeup((uint64_t)sleepSeconds * 1000000ULL)` before sleeping.)
 
 ---
 
@@ -689,20 +694,20 @@ void showTasksScreen(int cursor) {
 }
 ```
 
-**Optional:** the stock `showMenu()` lays out 4 tiles in one column; a 5th tile may
-clip at the bottom of the 200 px screen. Tighten the vertical spacing (the exact
-constants vary by firmware version — look for the `y0`/`step`/tile height in
-`showMenu` and squeeze ~10%).
+**Optional:** the stock `showMenu()` lays out 4 tiles in one column. A 5th tile may
+clip at the bottom of the 200 px screen. Tighten the vertical spacing. The exact
+constants vary by firmware version. Look for the `y0`, `step`, and tile height in
+`showMenu` and reduce them by about 10%.
 
 ---
 
 ## 10. Build settings
 
-The sketch grows past the default 1.25 MB app partition (network code + TLS). In
-the Arduino IDE choose a larger app partition, e.g.
+The sketch grows past the default 1.25 MB app partition (network code and TLS). In
+the Arduino IDE choose a larger app partition, for example
 **Tools → Partition Scheme → "Minimal SPIFFS (1.9MB APP)"** or **"Huge APP (3MB No
-OTA)"**. Safe: the project uses no OTA and no internal flash filesystem (all data
-lives on the SD card).
+OTA)"**. This is safe: the project uses no OTA and no internal flash filesystem. All
+data lives on the SD card.
 
 Symptom if you skip this: *"Sketch too big / text section exceeds available space."*
 
@@ -710,16 +715,16 @@ Symptom if you skip this: *"Sketch too big / text section exceeds available spac
 
 ## 11. Optional: Bluetooth config & status (ble_service)
 
-Adds a BLE GATT service: phone-side apps (e.g. Web Bluetooth) can read device
-status as JSON and write all settings (Wi-Fi, Memos URL/token/visibility, timezone,
-portal PIN) without opening the portal.
+This adds a BLE GATT service. Phone apps (for example Web Bluetooth) can read the
+device status as JSON and write all settings (Wi-Fi, Memos URL, token, visibility,
+timezone, portal PIN) without opening the portal.
 
 Drop in `shtc3/` and `ble_service/` (step 1), then:
 
 **`types.h`:** add `STATE_BLE` to `AppState` and bump `#define SETTINGS_COUNT 4` (was 3).
 
-**`ui.h`/`ui.cpp`** — settings screen shows the new entry (edit `showSettings` to
-draw a 4th row labelled "bluetooth"), plus:
+**`ui.h` / `ui.cpp`** — the settings screen shows the new entry. Edit `showSettings`
+to draw a 4th row labelled "bluetooth". Then add:
 
 ```c
 // ui.h
@@ -751,7 +756,7 @@ void showBleMode() {
 const char* SETTINGS_ITEMS[] = { "Sounds", "Transfer", "Bluetooth", "Device" };
 ```
 
-Settings select handler — map index 2 to the BLE screen (shift "Device" to 3):
+Settings select handler — map index 2 to the BLE screen (shift "Device" to index 3):
 
 ```c
 } else if (settingsCursor == 2) {
@@ -761,7 +766,7 @@ Settings select handler — map index 2 to the BLE screen (shift "Device" to 3):
 }
 ```
 
-Main loop — add the branch:
+Main loop — add this branch:
 
 ```cpp
 else if (state == STATE_BLE) {
@@ -779,29 +784,30 @@ else if (state == STATE_BLE) {
 
 BLE config wire format (one write, newline-separated):
 `[PIN\n] ssid\npass\nmemos_url\nmemos_token\nmemos_vis\ntz_offset_min\nnew_pin`
-(lines 2+ of trailing fields are optional; the PIN line is required only when a
-portal PIN is already set.)
+(lines 2 and later of trailing fields are optional. The PIN line is required only
+when a portal PIN is already set.)
 
 ---
 
 ## 12. First start
 
-1. Flash, open the serial monitor once and confirm `Memos URL` / stored Wi-Fi lines.
-2. On the device: Settings → Transfer (web portal), browse to `/setup`, fill in
-   your Memos URL + access token, save.
-3. Menu → Sync. Health check passes, tasks download, pending notes transcribe and
-   publish to Memos.
+1. Flash the device. Open the serial monitor once and confirm the `Memos URL` and
+   stored Wi-Fi lines.
+2. On the device: Settings → Transfer (web portal). Browse to `/setup`. Fill in your
+   Memos URL and access token. Save.
+3. Menu → Sync. The health check passes, tasks download, and pending notes
+   transcribe and publish to Memos.
 
 Server preparation (token, AI transcription, HTTPS notes): see
-[`docs/memos_server_setup.md`](docs/memos_server_setup.md). What lands where and
-how conflicts resolve: [`docs/sync_model.md`](docs/sync_model.md).
+[`docs/memos_server_setup.md`](docs/memos_server_setup.md). What data lands where
+and how conflicts resolve: [`docs/sync_model.md`](docs/sync_model.md).
 
 ---
 
 ## APIs used from the base firmware
 
-The modules rely on these existing symbols (verify the names match your firmware
-version):
+The modules rely on these existing symbols. Verify that the names match your firmware
+version:
 
 - Notes/index: `noteIndex`, `updateIndexHasText`, `writeNoteMeta`, `NOTES_DIR`
 - UI: `showTranscribing`, `showWifiConnecting`, `showDone`, `showError`, `showIdle`,

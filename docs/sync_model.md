@@ -1,65 +1,66 @@
 # Sync model
 
-What the integration mirrors between the device and Memos, and the rules that
-govern it. TL;DR: **the device's SD card is the source of truth for notes; Memos
-is the source of truth for task text; the device wins a task toggle race.**
+This page describes the data that moves between the device and the Memos server,
+and the rules that govern it.
 
-## Notes (device → Memos, one-way)
+Short version: the device SD card is the source of truth for notes. The Memos
+server is the source of truth for task text. The device wins a task conflict.
 
-- A recording is `note_NNN.wav` on the SD card, indexed in `/notes/index.csv`
-  with its tag and a `hasText` flag.
-- On sync, every note with `hasText == false` goes up to
-  `POST /api/v1/ai:transcribe`. The transcript is written to `note_NNN.txt` and
-  the flag flips to true.
-- The transcript is then published with `POST /api/v1/memos`:
-  - content = `#Tag\n\n<transcript>` when the tag is meaningful — the literal
-    tags `Note` and `Untagged` (and notes with no tag) are published without a
-    `#` prefix;
-  - visibility = the configured default (`PRIVATE`/`PROTECTED`/`PUBLIC`).
-- The returned memo id (`name`) is stored in `note_NNN.meta` as `memo_name=…`
-  (alongside `created_utc`, `tag`, `synced`), so the link is never lost.
-- **Notes never go the other way:** deleting or editing the memo in Memos does
-  not touch the device copy, and deleting a note on the device does not touch
-  the memo.
-- Failures are safe: a note whose transcription fails keeps `hasText == false`
-  and retries next sync. Sync reports `done`, `SYNC PARTIAL` or `SYNC FAILED`.
+## Notes (device to server, one-way)
 
-## Tasks (device ↔ Memos, two-way)
+- A recording is `note_NNN.wav` on the SD card. The index `/notes/index.csv` holds
+  the note tag and a `hasText` flag.
+- On sync, each note with `hasText == false` goes to `POST /api/v1/ai:transcribe`.
+  The device writes the transcript to `note_NNN.txt` and sets `hasText` to true.
+- The device then publishes the transcript with `POST /api/v1/memos`:
+  - The memo content is `#Tag\n\n<transcript>` when the tag is meaningful. The tags
+    `Note` and `Untagged`, and notes without a tag, publish without the `#` prefix.
+  - The visibility comes from the config (`PRIVATE`, `PROTECTED`, or `PUBLIC`).
+- The device stores the memo ID (`name`) in `note_NNN.meta` as `memo_name`. The meta
+  file also holds `created_utc`, `tag`, and `synced`. The link to the memo survives
+  reboots.
+- Notes never move from the server to the device. If you delete or edit the memo in
+  Memos, the device copy stays the same. If you delete the note on the device, the
+  memo stays.
+- Failures are safe. A failed transcription keeps `hasText == false`. The next sync
+  retries it. The screen reports `done`, `SYNC PARTIAL`, or `SYNC FAILED`.
 
-A task is a **checkbox line inside any memo**:
+## Tasks (two-way)
+
+A task is a checkbox line inside a memo:
 
 ```
 - [ ] buy oat milk
 - [x] water the plants
 ```
 
-(`[ ]` / `[x]` without the dash are also recognized; `X` counts as done.)
+(`[ ]` and `[x]` without the dash also count. `X` also means done.)
 
-- **Pull:** sync fetches the 30 most recent memos (`GET /api/v1/memos?pageSize=30`)
-  and collects every checkbox line into the device task list. A task is keyed by
-  `(memo id, line index)` — so editing line 3 of a memo updates that task, while
-  inserting a line above it re-keys the tasks below.
-- **Toggle on device:** flips the checkbox in RAM, marks it `dirty` and persists
-  to `/notes/tasks.txt` immediately (works offline).
-- **Push:** at the start of the next sync, each dirty task re-reads its memo
-  (`GET /api/v1/<memo id>`), flips only that line's checkbox, and writes the
-  whole content back (`PATCH …?updateMask=content`).
-- **Conflict rule:** dirty (device-toggled) tasks survive a pull — the pull
-  adopts the server's text but keeps the device's done state, and the push then
-  writes that state to the server. Device wins.
-- Tasks live in memos you own, so any memo in your timeline can host checklists
-  (e.g. a pinned `#tasks` memo).
+- **Pull:** the sync sends `GET /api/v1/memos?pageSize=30` to fetch the 30 newest
+  memos. It collects each checkbox line into the device task list. A task key is
+  `(memo ID, line index)`. When you edit line 3 of a memo, you update that task.
+  When you insert a line above it, you change the keys of the tasks below.
+- **Toggle on the device:** the device flips the checkbox in memory, marks the task
+  `dirty`, and stores it in `/notes/tasks.txt`. This works offline.
+- **Push:** at the start of the next sync, the device reads each dirty task memo
+  (`GET /api/v1/<memo id>`). It flips only that checkbox line. It writes the full
+  content back (`PATCH ...?updateMask=content`).
+- **Conflict rule:** dirty tasks survive a pull. The pull takes the text from the
+  server but keeps the device done state. The push then writes that state to the
+  server. The device wins.
+- Store your tasks in your own memos. Any memo can hold a checklist, for example a
+  pinned `#tasks` memo.
 
 ## Config
 
-Everything is stored on the SD card in `/notes/config.txt` (Wi-Fi, Memos URL,
-token, visibility, timezone, portal PIN), edited via the portal `/setup` page or
-BLE. `secrets.h` only seeds the very first boot.
+The file `/notes/config.txt` on the SD card holds the settings: Wi-Fi, Memos URL,
+token, visibility, timezone, and portal PIN. Edit them on the portal `/setup` page
+or over BLE. `secrets.h` only seeds the first boot.
 
-## Time & housekeeping
+## Time and housekeeping
 
-- Each sync first sets the clock from NTP, applies the configured timezone, then
-  talks to Memos. Note timestamps on the portal render in local time.
-- Health check order on every sync: Wi-Fi → NTP → Memos API health
-  (reachability + token) → tasks push/pull → note transcription/publish. Failing
-  stages abort the sync with a specific on-screen error.
+- Each sync gets the time from NTP, applies the configured timezone, and then talks
+  to the Memos server. The portal shows note timestamps in local time.
+- Each sync runs these stages in order: Wi-Fi, NTP, Memos health check, task push
+  and pull, note transcription and publish. A failed stage stops the sync. The
+  screen shows the cause.
