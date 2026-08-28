@@ -17,7 +17,7 @@ This repository contains only my own additions: the Memos module, the config sto
 - **Your own copy of the Pala Note firmware** (© Paul Lagier, [paullagier.craft.me](https://paullagier.craft.me)). This add-on does not include it.
 - **Arduino IDE** or `arduino-cli` with **ESP32 core 3.x** installed.
 - **A partition scheme with a large app partition** — "Minimal SPIFFS 1.9MB APP" or "Huge APP 3MB No OTA". The stock default 1.25MB is too small.
-- **A Memos server** you control (self-hosted or hosted). The server must expose the v1 API, including `POST /api/v1/ai:transcribe` for transcription. See [`docs/memos_server_setup.md`](docs/memos_server_setup.md).
+- **A Memos server** you control (self-hosted or hosted), **v0.27.0 or later**. The server must expose the v1 API, including `POST /api/v1/ai:transcribe` for transcription. You also need an AI provider configured in Memos (OpenAI Whisper, or any OpenAI-compatible endpoint like Groq, or Google Gemini). See [`docs/memos_server_setup.md`](docs/memos_server_setup.md).
 - **An SD card** on the device (all data lives there — notes, config, tasks).
 
 ## What it does

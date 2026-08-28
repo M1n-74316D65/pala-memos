@@ -26,11 +26,63 @@ Memos user account. New notes belong to you and default to `PRIVATE` visibility.
 ## AI transcription
 
 The integration sends audio to the Memos AI endpoint
-`POST /api/v1/ai:transcribe`. Your Memos server must offer AI transcription. This
-depends on the Memos version. Configure an AI backend in the Memos admin settings
-if your version asks for one.
+`POST /api/v1/ai:transcribe`. Your Memos server must offer AI transcription.
+This requires **Memos v0.27.0 or later**.
 
-If the health check passes and transcription fails, check the AI endpoint first.
+Memos delegates transcription to an external AI provider. You configure the
+provider in the Memos admin settings under **AI**. Two provider types are
+supported:
+
+| Provider | Default model | How it works |
+|----------|---------------|--------------|
+| **OpenAI** | `whisper-1` | Dedicated speech-to-text endpoint (`/audio/transcriptions`) |
+| **Gemini** | `gemini-2.5-flash` | Multimodal audio LLM (`generateContent`) |
+
+### OpenAI provider (Whisper and compatible)
+
+Set the provider type to `OPENAI` and enter your API key. The default model is
+`whisper-1`. You can also use these OpenAI models:
+
+- `gpt-4o-transcribe`
+- `gpt-4o-mini-transcribe`
+- `gpt-4o-transcribe-diarize`
+
+The OpenAI provider also works with **any OpenAI-compatible endpoint**. Set a
+custom endpoint URL in the provider config. Known compatible services:
+
+- **Groq Whisper** (`https://api.groq.com/openai/v1`)
+- **Self-hosted faster-whisper** (any endpoint that follows the OpenAI
+  transcription API contract)
+- **Azure OpenAI Whisper**
+
+### Gemini provider
+
+Set the provider type to `GEMINI` and enter your Google AI API key. The default
+model is `gemini-2.5-flash`. You can also use `gemini-2.5-pro`.
+
+Gemini handles audio through its multimodal generation API, not a dedicated
+transcription endpoint. Memos transcodes WebM/Opus to WAV before sending. The
+device already sends WAV, so no transcoding happens on the Memos side.
+
+### Transcription settings
+
+You can set these optional fields in the Memos AI settings:
+
+- **Language** — an ISO 639-1 code (for example, `en`, `de`, `fr`) to hint the
+  spoken language. Leave empty for auto-detect.
+- **Prompt** — a spelling or vocabulary hint for the model. This helps with
+  names, technical terms, or domain-specific words.
+
+### Troubleshooting
+
+If the health check passes and transcription fails, check the AI provider first.
+Common causes:
+
+- No AI provider configured in Memos admin settings.
+- Wrong API key or expired key.
+- The provider endpoint is unreachable from the Memos server.
+- Audio size exceeds 25 MiB (the Memos limit).
+
 Notes with a failed transcription stay on the device. The next sync tries them
 again. Nothing is lost.
 
